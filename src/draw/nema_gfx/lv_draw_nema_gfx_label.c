@@ -77,7 +77,23 @@ void lv_draw_nema_gfx_label(lv_draw_unit_t * draw_unit, const lv_draw_label_dsc_
 {
     if(dsc->opa <= LV_OPA_MIN) return;
 
+    lv_layer_t * layer = draw_unit->target_layer;
+
+    lv_area_t clip_area;
+    lv_area_copy(&clip_area, draw_unit->clip_area);
+    lv_area_move(&clip_area, -layer->buf_area.x1, -layer->buf_area.y1);
+
+    nema_bind_dst_tex((uintptr_t)NEMA_VIRT2PHYS(layer->draw_buf->data), lv_area_get_width(&(layer->buf_area)),
+                      lv_area_get_height(&(layer->buf_area)), LV_NEMA_GFX_COLOR_FORMAT,
+                      lv_area_get_width(&(layer->buf_area))*LV_NEMA_GFX_FORMAT_MULTIPLIER);
+
+    nema_set_clip(clip_area.x1, clip_area.y1, lv_area_get_width(&clip_area), lv_area_get_height(&clip_area));
+
     _draw_label_iterate_characters(draw_unit, dsc, coords);
+
+    lv_draw_nema_gfx_unit_t * draw_nema_gfx_unit = (lv_draw_nema_gfx_unit_t *)draw_unit;
+    nema_cl_submit(&(draw_nema_gfx_unit->cl));
+    nema_cl_wait(&(draw_nema_gfx_unit->cl));
 }
 
 /**********************
@@ -85,7 +101,7 @@ void lv_draw_nema_gfx_label(lv_draw_unit_t * draw_unit, const lv_draw_label_dsc_
  **********************/
 static inline uint8_t _bpp_nema_gfx_format(lv_draw_glyph_dsc_t * glyph_draw_dsc)
 {
-    uint32_t format = glyph_draw_dsc->g->format ;
+    uint32_t format = glyph_draw_dsc->g->format;
 
     switch(format) {
         case LV_FONT_GLYPH_FORMAT_A1:
@@ -127,23 +143,9 @@ static void _draw_nema_gfx_letter(lv_draw_unit_t * draw_unit, lv_draw_glyph_dsc_
                 return;
             lv_area_move(&blend_area, -layer->buf_area.x1, -layer->buf_area.y1);
 
-            //Set Clipping Area
-            lv_area_t clip_area;
-            lv_area_copy(&clip_area, draw_unit->clip_area);
-            lv_area_move(&clip_area, -layer->buf_area.x1, -layer->buf_area.y1);
-
-            nema_bind_dst_tex((uintptr_t)NEMA_VIRT2PHYS(layer->draw_buf->data), lv_area_get_width(&(layer->buf_area)),
-                              lv_area_get_height(&(layer->buf_area)), LV_NEMA_GFX_COLOR_FORMAT,
-                              lv_area_get_width(&(layer->buf_area))*LV_NEMA_GFX_FORMAT_MULTIPLIER);
-            nema_set_clip(clip_area.x1, clip_area.y1, lv_area_get_width(&clip_area), lv_area_get_height(&clip_area));
-
-            lv_color32_t col32 = lv_color_to_32(glyph_draw_dsc->color, glyph_draw_dsc->opa);
-            uint32_t color = nema_rgba(col32.red, col32.green, col32.blue, col32.alpha);
-
             const lv_draw_buf_t * draw_buf = glyph_draw_dsc->glyph_data;
             const void * mask_buf = draw_buf->data;
 
-            nema_set_tex_color(color);
 
             int32_t x = glyph_draw_dsc->letter_coords->x1 - layer->buf_area.x1;
             int32_t y = glyph_draw_dsc->letter_coords->y1 - layer->buf_area.y1;
@@ -151,14 +153,6 @@ static void _draw_nema_gfx_letter(lv_draw_unit_t * draw_unit, lv_draw_glyph_dsc_
             int32_t h = glyph_draw_dsc->g->box_h;
 
             nema_bind_src_tex((uintptr_t)(mask_buf), w * h, 1, _bpp_nema_gfx_format(glyph_draw_dsc), -1, 1);
-
-            if(col32.alpha < 255U) {
-                nema_set_blend_blit(NEMA_BL_SIMPLE | NEMA_BLOP_MODULATE_A);
-                nema_set_const_color(color);
-            }
-            else {
-                nema_set_blend_blit(NEMA_BL_SIMPLE);
-            }
 
             nema_matrix3x3_t m = {
                 1,    w,   -x - (y * w) - (0.5 * w),
@@ -168,10 +162,6 @@ static void _draw_nema_gfx_letter(lv_draw_unit_t * draw_unit, lv_draw_glyph_dsc_
 
             nema_set_matrix(m);
             nema_raster_rect(x, y, w, h);
-
-            lv_draw_nema_gfx_unit_t * draw_nema_gfx_unit = (lv_draw_nema_gfx_unit_t *)draw_unit;
-
-            nema_cl_submit(&(draw_nema_gfx_unit->cl));
         }
         else if(glyph_draw_dsc->format == LV_FONT_GLYPH_FORMAT_IMAGE) {
 #if LV_USE_IMGFONT
@@ -190,6 +180,19 @@ static void _draw_nema_gfx_letter(lv_draw_unit_t * draw_unit, lv_draw_glyph_dsc_
         lv_draw_nema_gfx_fill(draw_unit, fill_draw_dsc, fill_area);
     }
 
+}
+
+static inline void _set_color_blend(uint32_t color, uint8_t alpha)
+{
+    nema_set_tex_color(color);
+
+    if(alpha < 255U) {
+        nema_set_blend_blit(NEMA_BL_SIMPLE | NEMA_BLOP_MODULATE_A);
+        nema_set_const_color(color);
+    }
+    else {
+        nema_set_blend_blit(NEMA_BL_SIMPLE);
+    }
 }
 
 static void _draw_label_iterate_characters(lv_draw_unit_t * draw_unit, const lv_draw_label_dsc_t * dsc,
@@ -307,6 +310,16 @@ static void _draw_label_iterate_characters(lv_draw_unit_t * draw_unit, const lv_
     uint32_t i;
     int32_t letter_w;
 
+    lv_color32_t dsc_col32 = lv_color_to_32(dsc->color, dsc->opa);
+    uint32_t nema_dsc_color = nema_rgba(dsc_col32.red, dsc_col32.green, dsc_col32.blue, dsc_col32.alpha);
+    lv_color32_t dsc_sel_col32 = lv_color_to_32(dsc->sel_color, dsc->opa);
+    uint32_t nema_dsc_sel_color = nema_rgba(dsc_sel_col32.red, dsc_sel_col32.green, dsc_sel_col32.blue,
+                                            dsc_sel_col32.alpha);
+
+    _set_color_blend(nema_dsc_color, dsc_col32.alpha);
+
+    uint32_t is_dsc_color_enabled = 1U;
+
     /*Write out all lines*/
     while(dsc->text[line_start] != '\0') {
         pos.x += x_ofs;
@@ -355,7 +368,7 @@ static void _draw_label_iterate_characters(lv_draw_unit_t * draw_unit, const lv_
                     fill_area.y2 = fill_area.y1 + underline_width - 1;
 
                     fill_dsc.color = dsc->color;
-                    _draw_nema_gfx_letter(draw_unit, NULL, &fill_dsc, &fill_area);
+                    lv_draw_nema_gfx_fill(draw_unit, &fill_dsc, &fill_area);
                 }
                 if(dsc->decor & LV_TEXT_DECOR_STRIKETHROUGH) {
                     lv_area_t fill_area;
@@ -365,17 +378,26 @@ static void _draw_label_iterate_characters(lv_draw_unit_t * draw_unit, const lv_
                     fill_area.y2 = fill_area.y1 + underline_width - 1;
 
                     fill_dsc.color = dsc->color;
-                    _draw_nema_gfx_letter(draw_unit, NULL, &fill_dsc, &fill_area);
+                    lv_draw_nema_gfx_fill(draw_unit, &fill_dsc, &fill_area);
                 }
             }
 
             if(sel_start != 0xFFFF && sel_end != 0xFFFF && logical_char_pos >= sel_start && logical_char_pos < sel_end) {
                 draw_letter_dsc.color = dsc->sel_color;
                 fill_dsc.color = dsc->sel_bg_color;
-                _draw_nema_gfx_letter(draw_unit, NULL, &fill_dsc, &bg_coords);
+                lv_draw_nema_gfx_fill(draw_unit, &fill_dsc, &bg_coords);
+
+                if(is_dsc_color_enabled) {
+                    _set_color_blend(nema_dsc_sel_color, dsc_sel_col32.alpha);
+                    is_dsc_color_enabled = 0U;
+                }
             }
             else {
                 draw_letter_dsc.color = dsc->color;
+                if(!is_dsc_color_enabled) {
+                    _set_color_blend(nema_dsc_color, dsc_col32.alpha);
+                    is_dsc_color_enabled = 1U;
+                }
             }
 
             _draw_letter(draw_unit, &draw_letter_dsc, &pos, font, letter);
@@ -506,6 +528,9 @@ static void _draw_letter(lv_draw_unit_t * draw_unit, lv_draw_glyph_dsc_t * dsc, 
     _draw_nema_gfx_letter(draw_unit, dsc, NULL, NULL);
 
     if(g.resolved_font && font->release_glyph) {
+        lv_draw_nema_gfx_unit_t * draw_nema_gfx_unit = (lv_draw_nema_gfx_unit_t *)draw_unit;
+        nema_cl_submit(&(draw_nema_gfx_unit->cl));
+        nema_cl_wait(&(draw_nema_gfx_unit->cl));
         font->release_glyph(font, &g);
     }
     LV_PROFILER_END;
