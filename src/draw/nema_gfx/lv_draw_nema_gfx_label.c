@@ -127,9 +127,11 @@ void lv_draw_nema_gfx_label(lv_draw_unit_t * draw_unit, const lv_draw_label_dsc_
     lv_color_format_t dst_cf = layer->draw_buf->header.cf;
     uint32_t dst_nema_cf = lv_nemagfx_cf_to_nema(dst_cf);
 
+    int32_t stride = (dst_cf >= LV_COLOR_FORMAT_NEMA_TSC_START && dst_cf <= LV_COLOR_FORMAT_NEMA_TSC_END) ?
+                     -1 : lv_area_get_width(&(layer->buf_area)) * lv_color_format_get_size(dst_cf);
+
     nema_bind_dst_tex((uintptr_t)NEMA_VIRT2PHYS(layer->draw_buf->data), lv_area_get_width(&(layer->buf_area)),
-                      lv_area_get_height(&(layer->buf_area)), dst_nema_cf,
-                      lv_area_get_width(&(layer->buf_area))*lv_color_format_get_size(dst_cf));
+                      lv_area_get_height(&(layer->buf_area)), dst_nema_cf, stride);
 
     nema_set_clip(clip_area.x1, clip_area.y1, lv_area_get_width(&clip_area), lv_area_get_height(&clip_area));
 

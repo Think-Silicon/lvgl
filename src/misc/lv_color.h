@@ -83,6 +83,12 @@ enum {
                                             (cf) == LV_COLOR_FORMAT_RGB888 ? 24 :   \
                                             (cf) == LV_COLOR_FORMAT_ARGB8888 ? 32 : \
                                             (cf) == LV_COLOR_FORMAT_XRGB8888 ? 32 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC4 ? 16 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC6A ? 24 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC6AP ? 24 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC6 ? 24 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC12 ? 24 : \
+                                            (cf) == LV_COLOR_FORMAT_NEMA_TSC12A ? 24 : \
                                             0                                       \
                                     )
 
